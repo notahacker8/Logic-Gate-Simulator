@@ -1,0 +1,2845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Logic Simulator</title>
+<style>
+    * {
+        user-select: none;
+    }
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        margin: 0;
+        overflow: hidden;
+        background: #1e1e1e;
+    }
+
+    /* Toolbar - Compact */
+    #toolbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 52px;
+        background: #2d2d2d;
+        border-bottom: 1px solid #3e3e3e;
+        padding: 6px 12px;
+        display: flex;
+        gap: 6px;
+        z-index: 100;
+        overflow-x: auto;
+        box-shadow: 0 1px 5px rgba(0,0,0,0.3);
+    }
+
+    .toolbar-item {
+        background: #3e3e3e;
+        border: 1px solid #5e5e5e;
+        color: #d4d4d4;
+        padding: 4px 10px;
+        border-radius: 6px;
+        cursor: grab;
+        font-size: 11px;
+        font-weight: bold;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        white-space: nowrap;
+    }
+
+    .toolbar-item:active {
+        cursor: grabbing;
+    }
+
+    .toolbar-item:hover {
+        background: #4e4e4e;
+        transform: translateY(-1px);
+    }
+
+    .toolbar-item[data-custom="true"] {
+        background: linear-gradient(135deg, #3d2b56 0%, #2a1a3d 100%);
+        border-color: #9b59b6;
+        color: #d4b8f0;
+        font-weight: bold;
+    }
+
+    /* Canvas */
+    #canvas {
+        position: absolute;
+        top: 52px;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #252526;
+        overflow: auto;
+    }
+
+    #workspace {
+        position: relative;
+        min-width: 2000px;
+        min-height: 2000px;
+        background-image:
+            linear-gradient(#3e3e3e 1px, transparent 1px),
+            linear-gradient(90deg, #3e3e3e 1px, transparent 1px);
+        background-size: 20px 20px;
+    }
+
+    /* SVG Layer for Connections */
+    #connections-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 5;
+    }
+
+    /* UI Gate Component - Smaller */
+    .ui-gate {
+        position: absolute;
+        background: #2d2d2d;
+        border: 1.5px solid #5e5e5e;
+        border-radius: 7px;
+        min-width: 95px;
+        padding: 8px;
+        cursor: move;
+        z-index: 10;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+        transition: box-shadow 0.2s;
+    }
+
+    .ui-gate:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        border-color: #7e7e7e;
+    }
+
+    .ui-gate.selected {
+        border-color: #007acc;
+        box-shadow: 0 0 0 1.5px rgba(0,122,204,0.3);
+    }
+
+    /* Add rename indicator to INPUT/OUTPUT gates */
+    .ui-gate:has(.gate-title[data-renamable="true"]) {
+        border-color: #4ec9b0;
+    }
+
+    .ui-gate:has(.gate-title[data-renamable="true"]):hover {
+        border-color: #6ee9d0;
+        cursor: pointer;
+    }
+
+    /* Tooltip for rename hint */
+    .ui-gate[data-renamable="true"] .gate-title::after {
+        content: " ✏️";
+        font-size: 10px;
+        opacity: 0.5;
+    }
+
+    .ui-gate[data-renamable="true"]:hover .gate-title::after {
+        opacity: 1;
+    }
+
+    /* Custom gate hover effect */
+    .ui-gate:has(.gate-title[title*="CUSTOM"]) {
+        cursor: pointer;
+    }
+
+    .ui-gate:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        border-color: #7e7e7e;
+    }
+
+    /* Optional: add delete indicator on hover - REMOVED
+    .ui-gate:hover::after {
+        content: "✖";
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        background: #ff4444;
+        color: white;
+        border-radius: 50%;
+        width: 14px;
+        height: 14px;
+        font-size: 9px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        z-index: 20;
+    }
+    */
+
+    .rename-btn:hover {
+        transform: scale(1.1);
+        opacity: 0.8;
+    }
+
+    .gate-title {
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 6px;
+        font-size: 11px;
+        color: #4ec9b0;
+    }
+
+    .gate-inputs, .gate-outputs {
+        display: flex;
+        justify-content: space-around;
+        margin: 5px 0;
+        gap: 6px;
+    }
+
+    .input-pin, .output-pin {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 10px;
+        padding: 2px 5px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .input-pin {
+        color: #9cdcfe;
+    }
+
+    .output-pin {
+        color: #ce9178;
+    }
+
+    .input-pin:hover, .output-pin:hover {
+        background: #3e3e3e;
+    }
+
+    .pin-circle {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+
+    .input-pin .pin-circle {
+        background: #9cdcfe;
+        border: 1px solid #5e5e5e;
+    }
+
+    .output-pin .pin-circle {
+        background: #ce9178;
+        border: 1px solid #5e5e5e;
+    }
+
+    /* Larger 0/1 values - increased font size and box size */
+    .pin-value {
+        font-weight: bold;
+        font-size: 11px;
+        background: #1e1e1e;
+        padding: 2px 5px;
+        border-radius: 3px;
+        min-width: 20px;
+        text-align: center;
+    }
+
+    .toggle-input-btn {
+        background: #0e639c;
+        border: none;
+        color: white;
+        padding: 1px 5px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 9px;
+        margin-left: 3px;
+    }
+
+    .toggle-input-btn:hover {
+        background: #1177bb;
+    }
+
+    /* Connection Line Preview */
+    .temp-line {
+        position: absolute;
+        height: 1.5px;
+        background: #ffa500;
+        transform-origin: 0 0;
+        pointer-events: none;
+        z-index: 1000;
+    }
+
+    /* Status Bar */
+    #status {
+        position: fixed;
+        bottom: 8px;
+        right: 8px;
+        background: #2d2d2d;
+        padding: 4px 10px;
+        border-radius: 5px;
+        font-size: 10px;
+        z-index: 100;
+        font-family: monospace;
+    }
+
+    /* Controls */
+    .controls {
+        position: fixed;
+        bottom: 8px;
+        left: 8px;
+        display: flex;
+        gap: 6px;
+        z-index: 100;
+    }
+
+    .controls button {
+        background: #0e639c;
+        color: white;
+        border: none;
+        padding: 5px 12px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 10px;
+    }
+
+    .controls button:hover {
+        background: #1177bb;
+    }
+
+    .clear-btn {
+        background: #6c6c6c !important;
+    }
+
+    .clear-btn:hover {
+        background: #8c8c8c !important;
+    }
+    /* Disable highlighting on drag */
+    .ui-gate,
+    .ui-gate *,
+    .toolbar-item,
+    .toolbar-item *,
+    #workspace,
+    #canvas {
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        -khtml-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+    }
+
+    /* Prevent selection during drag */
+    .dragging {
+        user-select: none !important;
+        -webkit-user-select: none !important;
+        pointer-events: none !important;
+    }
+
+    /* Prevent text selection on double-click */
+    body.dragging,
+    body.dragging * {
+        user-select: none !important;
+        -webkit-user-select: none !important;
+    }
+
+    /* Disable image dragging */
+    img, svg {
+        -webkit-user-drag: none;
+        user-drag: none;
+    }
+
+    /* Disable selection on mousedown for interactive elements */
+    .ui-gate:active,
+    .toolbar-item:active {
+        user-select: none;
+        -webkit-user-select: none;
+    }
+</style>
+</head>
+<body>
+<div id="toolbar">
+    
+    <div class="toolbar-item" data-type="INPUT">
+        🔘 INPUT
+    </div>
+    <div class="toolbar-item" data-type="OUTPUT">
+        📤 OUTPUT
+    </div>
+    <div class="toolbar-item" data-type="AND">
+        ∧ AND
+    </div>
+    <div class="toolbar-item" data-type="OR">
+        ∨ OR
+    </div>
+    <div class="toolbar-item" data-type="XOR">
+        ⊕ XOR
+    </div>
+    <div class="toolbar-item" data-type="NOT">
+        ¬ NOT
+    </div>
+    <div class="toolbar-item" data-type="NAND">
+        ⊼ NAND
+    </div>
+    <div class="toolbar-item" data-type="NOR">
+        ⊽ NOR
+    </div>
+    <div class="toolbar-item" data-type="XNOR">
+        ↔ XNOR
+    </div>
+    <div class="toolbar-item" data-type="HALF_ADDER">➕ HALF ADDER</div>
+    <div class="toolbar-item" data-type="FULL_ADDER">➕ FULL ADDER</div>
+</div>
+
+<div id="canvas">
+    <div id="workspace">
+        <svg id="connections-layer"></svg>
+    </div>
+</div>
+
+<div id="status">Ready</div>
+<div class="controls">
+    <button onclick="showHelp()" style="background: #4ec9b0; color: #1e1e1e;">❓ Help</button>
+    <button onclick="clearCanvas()">🗑 Clear All</button>
+    <button onclick="clearAllCustomComponents()" style="background: #d32f2f;">🗑 Clear All Customs</button>
+    <button onclick="exportToFile()">💾 Export to File</button>
+    <button onclick="importFromFile()">📂 Import from File</button>
+    <button onclick="saveToLocalStorage()">💿 Save to Browser</button>
+    <button onclick="loadFromLocalStorage()">🔄 Load from Browser</button>
+    <button onclick="saveAsCustomComponent()" style="background: #9cdcfe;">💾 Save As Component</button>
+</div>
+
+<script>
+    // Your original classes (keep exactly as is)
+    function generateHash() {
+        return crypto.randomUUID();
+    }
+    
+    let LOGIC = {
+        AND: (a, b) => (a && b) ? 1 : 0,
+        OR: (a, b) => (a || b) ? 1 : 0,
+        XOR: (a, b) => (a !== b) ? 1 : 0,
+        NOT: a => a ? 0 : 1,
+        NAND: (a, b) => (a && b) ? 0 : 1,
+        NOR: (a, b) => (a || b) ? 0 : 1,
+        XNOR: (a, b) => (a === b) ? 1 : 0
+    };
+    
+    let ITEMS = []
+    let CONNECTIONS = []
+
+    class Item {
+        constructor(inputCount = 0, outputCount = 0) {
+            this.inputCount = inputCount;
+            this.outputCount = outputCount;
+            this.inputs = Array(inputCount).fill(0);
+            this.outputs = Array(outputCount).fill(0);
+            this.hash = generateHash();
+            
+            this.input_names = Array(inputCount);
+            for (let i = 0; i < inputCount; i++) {
+                this.input_names[i] = `IN_${i}`;
+            }
+            
+            this.output_names = Array(outputCount);
+            for (let i = 0; i < outputCount; i++) {
+                this.output_names[i] = `OUT_${i}`;
+            }
+            this.inputs_connected = [];
+            this.outputs_connected = [];
+            ITEMS.push(this)
+        }
+        CheckAllInputsConnected()
+        {
+            for (var i_n of this.input_names) {
+                if (!this.inputs_connected.includes(i_n))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    class INPUT extends Item {
+        constructor()
+        {
+            super (0, 1)
+            this.name = "INPUT";
+        }
+        evaluate() {}
+    }
+    
+    class OUTPUT extends Item {
+        constructor()
+        {
+            super (1, 0)
+            this.name = "OUTPUT"
+        }
+        evaluate() {}
+    }
+    
+    class LogicGate extends Item {}
+
+    class AND_GATE extends LogicGate {
+        constructor() {
+            super(2, 1);
+        }
+        evaluate() {
+            this.outputs[0] = LOGIC.AND(this.inputs[0], this.inputs[1]);
+        }
+    }
+
+    class OR_GATE extends LogicGate {
+        constructor() {
+            super(2, 1);
+        }
+        evaluate() {
+            this.outputs[0] = LOGIC.OR(this.inputs[0], this.inputs[1]);
+        }
+    }
+
+    class XOR_GATE extends LogicGate {
+        constructor() {
+            super(2, 1);
+        }
+        evaluate() {
+            this.outputs[0] = LOGIC.XOR(this.inputs[0], this.inputs[1]);
+        }
+    }
+
+    class NOT_GATE extends LogicGate {
+        constructor() {
+            super(1, 1);
+        }
+        evaluate() {
+            this.outputs[0] = LOGIC.NOT(this.inputs[0]);
+        }
+    }
+
+    class NAND_GATE extends LogicGate {
+        constructor() {
+            super(2, 1);
+        }
+        evaluate() {
+            this.outputs[0] = LOGIC.NAND(this.inputs[0], this.inputs[1]);
+        }
+    }
+
+    class NOR_GATE extends LogicGate {
+        constructor() {
+            super(2, 1);
+        }
+        evaluate() {
+            this.outputs[0] = LOGIC.NOR(this.inputs[0], this.inputs[1]);
+        }
+    }
+
+    class XNOR_GATE extends LogicGate {
+        constructor() {
+            super(2, 1);
+        }
+        evaluate() {
+            this.outputs[0] = LOGIC.XNOR(this.inputs[0], this.inputs[1]);
+        }
+    }
+    
+    class TRUTH_TABLE {
+        constructor(input_count, output_count)
+        {
+            this.input_count = input_count;
+            this.output_count = output_count;
+            this.input_names = [];
+            this.output_names = [];
+            this.dict = {};
+        }
+    }
+    
+    class CUSTOM_GATE extends LogicGate
+    {
+        constructor (name, truth_table)
+        {
+            super(truth_table.input_count, truth_table.output_count)
+            this.name = name;
+            this.truth_table = truth_table;
+            this.input_names = truth_table.input_names;
+            this.output_names = truth_table.output_names;
+        }
+        evaluate()
+        {
+            var key = this.inputs.join('')
+            var value = this.truth_table.dict[key]
+            if (value === undefined) {
+                value = '0'.repeat(this.outputCount);
+                console.log("error: value not found from truth table key: ", key);
+            }
+            
+            // Parse the value string and assign to outputs
+            for (let i = 0; i < this.outputs.length && i < value.length; i++) {
+                // Convert char to number (using subtraction method)
+                this.outputs[i] = value.charCodeAt(i) - 48;
+                // Alternative: this.outputs[i] = parseInt(value[i]);
+            }
+        }
+    }
+    
+    // Half Adder Truth Table
+    let HALF_ADDER_TRUTH_TABLE = new TRUTH_TABLE(2, 2);
+    HALF_ADDER_TRUTH_TABLE.dict = {
+        "00": "00",  // Sum=0, Carry=0
+        "01": "10",  // Sum=1, Carry=0
+        "10": "10",  // Sum=1, Carry=0
+        "11": "01"   // Sum=0, Carry=1
+    };
+    HALF_ADDER_TRUTH_TABLE.input_names = ["IN_0", "IN_1"];
+    HALF_ADDER_TRUTH_TABLE.output_names = ["S_0", "C_OUT"];
+    HALF_ADDER_TRUTH_TABLE.input_count = 2;
+    HALF_ADDER_TRUTH_TABLE.output_count = 2;
+
+    class HALF_ADDER extends CUSTOM_GATE {
+        constructor() {
+            super("HALF ADDER", HALF_ADDER_TRUTH_TABLE);
+        }
+    }
+    
+    let FULL_ADDER_TRUTH_TABLE = new TRUTH_TABLE(3, 2)
+    FULL_ADDER_TRUTH_TABLE.dict = {
+        "100": "10",
+        "101": "01",
+        "110": "01",
+        "111": "11",
+        "000": "00",
+        "001": "10",
+        "010": "10",
+        "011": "01"
+    };
+    FULL_ADDER_TRUTH_TABLE.input_names = ["IN_0", "IN_1", "C_IN"];
+    FULL_ADDER_TRUTH_TABLE.output_names = ["S_0", "C_OUT"];
+    FULL_ADDER_TRUTH_TABLE.input_count = 3;
+    FULL_ADDER_TRUTH_TABLE.output_count = 2;
+    
+    class FULL_ADDER extends CUSTOM_GATE {
+        constructor()
+        {
+            super("FULL ADDER", FULL_ADDER_TRUTH_TABLE)
+        }
+    }
+    
+    class Connection {
+        constructor(FromItem, ToItem, FromItemOutName, ToItemInName)
+        {
+            this.FromItem = FromItem;
+            this.ToItem = ToItem;
+            this.FromItemOutName = FromItemOutName;
+            this.ToItemInName = ToItemInName;
+            if (!ToItem.inputs_connected.includes(ToItemInName))
+            {
+                ToItem.inputs_connected.push(ToItemInName)
+            }
+            else
+            {
+                console.log(ToItemInName, "already connected in", ToItem);
+            }
+            CONNECTIONS.push(this)
+            markCircuitDirty(); // Add this
+        }
+    }
+    
+    function topologicalSort() {
+        // Build graph of dependencies
+        const graph = new Map();
+        const inDegree = new Map();
+        
+        // Initialize all gates
+        ITEMS.forEach(item => {
+            graph.set(item, []);
+            inDegree.set(item, 0);
+        });
+        
+        // Add edges: from source to destination
+        CONNECTIONS.forEach(conn => {
+            const from = conn.FromItem;
+            const to = conn.ToItem;
+            graph.get(from).push(to);
+            inDegree.set(to, inDegree.get(to) + 1);
+        });
+        
+        // Find gates with no dependencies (sources)
+        const queue = [];
+        for (let [item, degree] of inDegree) {
+            if (degree === 0) queue.push(item);
+        }
+        
+        // Process in order
+        const sorted = [];
+        while (queue.length > 0) {
+            const current = queue.shift();
+            sorted.push(current);
+            
+            // Remove current from dependencies
+            for (let neighbor of graph.get(current)) {
+                inDegree.set(neighbor, inDegree.get(neighbor) - 1);
+                if (inDegree.get(neighbor) === 0) {
+                    queue.push(neighbor);
+                }
+            }
+        }
+        
+        // Check for cycles
+        if (sorted.length !== ITEMS.length) {
+            console.warn("⚠ Cycle detected in circuit!", {
+                total: ITEMS.length,
+                processed: sorted.length,
+                unprocessed: ITEMS.filter(i => !sorted.includes(i))
+            });
+            return ITEMS; // Fallback to original order
+        }
+        
+        return sorted;
+    }
+    
+    // Cache the topological order (update when circuit changes)
+    let cachedTopologicalOrder = null;
+
+    function markCircuitDirty() {
+        cachedTopologicalOrder = null;
+    }
+
+    // Call this when circuit changes (add/delete gates/connections)
+    function updateTopologicalOrder() {
+        cachedTopologicalOrder = topologicalSort();
+    }
+
+    function Simulate() {
+        // Get or compute topological order
+        if (!cachedTopologicalOrder) {
+            cachedTopologicalOrder = topologicalSort();
+        }
+        
+        // Check for unconnected inputs
+        for (var item of ITEMS) {
+            if (!item.CheckAllInputsConnected() && item.inputCount !== 0) {
+                //console.log("Not all inputs connected:", item);
+            }
+        }
+        
+        // Evaluate in topological order
+        for (let item of cachedTopologicalOrder) {
+            // Only evaluate gates that have all inputs connected
+            if (item.inputCount === 0 || item.CheckAllInputsConnected()) {
+                item.evaluate();
+            }
+        }
+        
+        // Push outputs to connected inputs
+        for (let conn of CONNECTIONS) {
+            const fromIndex = conn.FromItem.output_names.indexOf(conn.FromItemOutName);
+            const toIndex = conn.ToItem.input_names.indexOf(conn.ToItemInName);
+            conn.ToItem.inputs[toIndex] = conn.FromItem.outputs[fromIndex];
+        }
+    }
+    
+    // ========== UI Classes that reference the original items ==========
+    
+    // Fixed renameItem function
+    function renameItem(uiGate) {
+        // Only allow renaming for INPUT and OUTPUT gates
+        if (!(uiGate.item instanceof INPUT) && !(uiGate.item instanceof OUTPUT)) {
+            return false;
+        }
+        
+        const currentName = uiGate.item.name || uiGate.item.constructor.name.replace('_GATE', '');
+        const newName = prompt(`Rename ${uiGate.item.constructor.name}:`, currentName);
+        
+        if (newName && newName.trim()) {
+            const oldName = uiGate.item.name || currentName;
+            uiGate.item.name = newName.trim();
+            
+            // Update the title text - fix: look for the span with the title text
+            const titleContainer = uiGate.element.querySelector('.gate-title');
+            if (titleContainer) {
+                // Make sure to update the correct span (the first span in the title bar)
+                const titleSpan = titleContainer.querySelector('span:first-child');
+                if (titleSpan) {
+                    titleSpan.textContent = newName.trim();
+                }
+            }
+            
+            // Update status
+            document.getElementById('status').textContent = `Renamed from "${oldName}" to "${uiGate.item.name}"`;
+            
+            setTimeout(() => {
+                const status = document.getElementById('status');
+                if (status.textContent.includes('Renamed')) {
+                    status.textContent = 'Ready';
+                }
+            }, 1500);
+            
+            return true;
+        }
+        return false;
+    }
+
+    // Fixed UIGate class
+    class UIGate {
+        constructor(item, x, y) {
+            this.item = item;  // Reference to the actual logic item
+            this.x = x;
+            this.y = y;
+            this.element = null;
+            this.pins = {};
+            this.createUI();
+        }
+        
+        createUI() {
+            const div = document.createElement('div');
+            div.className = 'ui-gate';
+            div.style.left = this.x + 'px';
+            div.style.top = this.y + 'px';
+            
+            // Fixed: 'dblclick' not 'dbclick' (was missing the 'l')
+            /*div.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                renameItem(this);
+            });*/
+            
+            let title = this.item.name || this.item.constructor.name.replace('_GATE', '');
+            if (title === 'INPUT') title = 'INPUT';
+            if (title === 'OUTPUT') title = 'OUTPUT';
+            
+            // Create inputs HTML
+            let inputsHtml = '';
+            for (let i = 0; i < this.item.input_names.length; i++) {
+                const pinName = this.item.input_names[i];
+                inputsHtml += `
+                    <div class="input-pin" data-pin="${pinName}" data-type="input">
+                        <span class="pin-circle"></span>
+                        <span>${pinName}</span>
+                        <span class="pin-value" id="input-${this.item.hash}-${pinName}">${this.item.inputs[i] || 0}</span>
+                    </div>
+                `;
+            }
+            
+            // Create outputs HTML
+            let outputsHtml = '';
+            for (let i = 0; i < this.item.output_names.length; i++) {
+                const pinName = this.item.output_names[i];
+                outputsHtml += `
+                    <div class="output-pin" data-pin="${pinName}" data-type="output">
+                        <span>${pinName}</span>
+                        <span class="pin-circle"></span>
+                        <span class="pin-value" id="output-${this.item.hash}-${pinName}">${this.item.outputs[i] || 0}</span>
+                        ${this.item instanceof INPUT ? '<button class="toggle-input-btn">Toggle</button>' : ''}
+                    </div>
+                `;
+            }
+            
+            // Fixed: Added the title text with proper structure for easy updating
+            div.innerHTML = `
+                <div class="gate-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span class="gate-title-text">${title}</span>
+                    ${(this.item instanceof INPUT || this.item instanceof OUTPUT) ? 
+                        '<button class="rename-btn" style="background: none; border: none; color: #4ec9b0; cursor: pointer; font-size: 12px; padding: 2px 6px;">✏️</button>' : 
+                        ''}
+                </div>
+                <div class="gate-inputs">${inputsHtml}</div>
+                <div class="gate-outputs">${outputsHtml}</div>
+            `;
+
+            // Add rename button event listener
+            const renameBtn = div.querySelector('.rename-btn');
+            if (renameBtn) {
+                renameBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    renameItem(this);
+                });
+            }
+            
+            // Store pin references
+            div.querySelectorAll('.input-pin, .output-pin').forEach(pin => {
+                const pinName = pin.dataset.pin;
+                this.pins[pinName] = pin;
+            });
+            
+            // Add event listeners
+            div.addEventListener('mousedown', (e) => {
+                if (e.target.classList.contains('toggle-input-btn')) {
+                    e.stopPropagation();
+                    if (this.item instanceof INPUT) {
+                        this.item.outputs[0] = this.item.outputs[0] ? 0 : 1;
+                        this.updateDisplay();
+                        UIConnectionManager.updateAllConnections();
+                    }
+                    return;
+                }
+                
+                if (e.target.closest('.input-pin')) {
+                    const pin = e.target.closest('.input-pin');
+                    UIConnectionManager.startConnection(this, pin.dataset.pin, 'input');
+                    return;
+                }
+                
+                if (e.target.closest('.output-pin')) {
+                    const pin = e.target.closest('.output-pin');
+                    UIConnectionManager.startConnection(this, pin.dataset.pin, 'output');
+                    return;
+                }
+                
+                UIDragManager.startDrag(this, e);
+            });
+            
+            document.getElementById('workspace').appendChild(div);
+            this.element = div;
+        }
+        
+        updateDisplay() {
+            // Update input values display
+            for (let i = 0; i < this.item.input_names.length; i++) {
+                const pinName = this.item.input_names[i];
+                const valueSpan = document.getElementById(`input-${this.item.hash}-${pinName}`);
+                if (valueSpan) {
+                    const value = this.item.inputs[i];
+                    valueSpan.textContent = (value === true || value === 1) ? '1' : '0';
+                }
+            }
+            
+            // Update output values display
+            for (let i = 0; i < this.item.output_names.length; i++) {
+                const pinName = this.item.output_names[i];
+                const valueSpan = document.getElementById(`output-${this.item.hash}-${pinName}`);
+                if (valueSpan) {
+                    const value = this.item.outputs[i];
+                    valueSpan.textContent = (value === true || value === 1) ? '1' : '0';
+                }
+            }
+            
+            // Update title if it has changed (preserve rename button)
+            const titleSpan = this.element.querySelector('.gate-title-text');
+            if (titleSpan) {
+                const expectedText = this.item.name || this.item.constructor.name.replace('_GATE', '');
+                if (titleSpan.textContent !== expectedText) {
+                    titleSpan.textContent = expectedText;
+                }
+            }
+        }
+        
+        getPinPosition(pinName, isOutput) {
+            const pinElement = this.element.querySelector(`.${isOutput ? 'output-pin' : 'input-pin'}[data-pin="${pinName}"]`);
+            if (pinElement) {
+                const pinRect = pinElement.getBoundingClientRect();
+                const workspaceRect = document.getElementById('workspace').getBoundingClientRect();
+                const canvasRect = document.getElementById('canvas').getBoundingClientRect();
+                
+                // Calculate absolute position relative to workspace
+                // Subtract workspace offset to get relative coordinates for SVG
+                return {
+                    x: pinRect.left + pinRect.width / 2 - workspaceRect.left,
+                    y: pinRect.top + pinRect.height / 2 - workspaceRect.top
+                };
+            }
+            return null;
+        }
+        
+        delete() {
+            if (this.element) this.element.remove();
+        }
+    }
+    
+    class UIDragManager {
+        static startDrag(uiGate, event) {
+            uiGate.element.style.cursor = 'grabbing';
+            const startX = event.clientX;
+            const startY = event.clientY;
+            const startLeft = uiGate.x;
+            const startTop = uiGate.y;
+            
+            const onMouseMove = (moveEvent) => {
+                const dx = moveEvent.clientX - startX;
+                const dy = moveEvent.clientY - startY;
+                uiGate.x = startLeft + dx;
+                uiGate.y = startTop + dy;
+                uiGate.element.style.left = uiGate.x + 'px';
+                uiGate.element.style.top = uiGate.y + 'px';
+                UIConnectionManager.updateAllConnections();
+            };
+            
+            const onMouseUp = () => {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                uiGate.element.style.cursor = 'move';
+            };
+            
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+            event.stopPropagation();
+        }
+    }
+    
+    class UIConnectionManager {
+        static activeConnection = null;
+        static tempLine = null;
+        
+        static startConnection(fromGate, pinName, pinType) {
+            if (pinType !== 'output') return;
+            
+            this.activeConnection = {
+                fromGate: fromGate,
+                fromPin: pinName
+            };
+            
+            document.body.style.cursor = 'crosshair';
+            
+            const onMouseMove = (e) => {
+                if (this.tempLine) this.tempLine.remove();
+                
+                const startPos = fromGate.getPinPosition(pinName, true);
+                const workspace = document.getElementById('workspace');
+                const workspaceRect = workspace.getBoundingClientRect();
+                
+                if (startPos) {
+                    // Calculate end position relative to workspace
+                    const endX = e.clientX - workspaceRect.left;
+                    const endY = e.clientY - workspaceRect.top;
+                    
+                    const dx = endX - startPos.x;
+                    const dy = endY - startPos.y;
+                    const length = Math.sqrt(dx * dx + dy * dy);
+                    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                    
+                    this.tempLine = document.createElement('div');
+                    this.tempLine.className = 'temp-line';
+                    this.tempLine.style.position = 'absolute';
+                    this.tempLine.style.height = '2px';
+                    this.tempLine.style.background = '#ffa500';
+                    this.tempLine.style.transformOrigin = '0 0';
+                    this.tempLine.style.left = startPos.x + 'px';
+                    this.tempLine.style.top = startPos.y + 'px';
+                    this.tempLine.style.width = length + 'px';
+                    this.tempLine.style.transform = `rotate(${angle}deg)`;
+                    this.tempLine.style.pointerEvents = 'none';
+                    workspace.appendChild(this.tempLine);
+                }
+            };
+            
+            const onMouseUp = (e) => {
+                if (this.tempLine) {
+                    this.tempLine.remove();
+                    this.tempLine = null;
+                }
+                
+                const targetPin = e.target.closest('.input-pin');
+                if (targetPin && this.activeConnection) {
+                    const targetGateElement = targetPin.closest('.ui-gate');
+                    const targetGate = uiGates.find(g => g.element === targetGateElement);
+                    const targetPinName = targetPin.dataset.pin;
+                    
+                    if (targetGate && targetPinName && targetGate !== fromGate) {
+                        if (!targetGate.item.inputs_connected.includes(targetPinName)) {
+                            const connection = new Connection(
+                                this.activeConnection.fromGate.item,
+                                targetGate.item,
+                                this.activeConnection.fromPin,
+                                targetPinName
+                            );
+                            uiConnections.push(new UIConnection(connection, this.activeConnection.fromGate, targetGate));
+                            console.log(`Connected ${this.activeConnection.fromGate.item.constructor.name}.${this.activeConnection.fromPin} → ${targetGate.item.constructor.name}.${targetPinName}`);
+                            Simulate();
+                            updateAllUIDisplays();
+                        } else {
+                            console.log(`Input ${targetPinName} already connected`);
+                            document.getElementById('status').textContent = 'Error: Input already connected';
+                            setTimeout(() => {
+                                if (document.getElementById('status').textContent === 'Error: Input already connected') {
+                                    document.getElementById('status').textContent = 'Ready';
+                                }
+                            }, 1500);
+                        }
+                    }
+                }
+                
+                this.activeConnection = null;
+                document.body.style.cursor = 'default';
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
+            
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        }
+        
+        static updateAllConnections() {
+            uiConnections.forEach(conn => conn.updateLine());
+        }
+    }
+    
+    class UIConnection {
+        constructor(connection, fromUIGate, toUIGate) {
+            this.connection = connection;
+            this.fromUIGate = fromUIGate;
+            this.toUIGate = toUIGate;
+            this.line = null;
+            this.createLine();
+        }
+        
+        createLine() {
+            const svg = document.getElementById('connections-layer');
+            this.line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            this.line.setAttribute('stroke', '#4ec9b0');
+            this.line.setAttribute('stroke-width', '2');
+            svg.appendChild(this.line);
+            this.updateLine();
+        }
+        
+        updateLine() {
+            const start = this.fromUIGate.getPinPosition(this.connection.FromItemOutName, true);
+            const end = this.toUIGate.getPinPosition(this.connection.ToItemInName, false);
+            
+            if (start && end && this.line) {
+                this.line.setAttribute('x1', start.x);
+                this.line.setAttribute('y1', start.y);
+                this.line.setAttribute('x2', end.x);
+                this.line.setAttribute('y2', end.y);
+            }
+        }
+        
+        delete() {
+            if (this.line) this.line.remove();
+        }
+    }
+    
+    // Global UI state
+    let uiGates = [];
+    let uiConnections = [];
+    
+    // Create a new gate from toolbar
+    function createUIGate(type, x, y) {
+        let item;
+        
+        // Check if it's a custom component first
+        if (window.customComponents && window.customComponents[type]) {
+            const customData = window.customComponents[type];
+            // Create a new CUSTOM_GATE with the stored truth table
+            item = new CUSTOM_GATE(customData.name, customData.truth_table);
+        } else {
+            // Regular gates
+            switch(type) {
+                case 'INPUT': item = new INPUT(); break;
+                case 'OUTPUT': item = new OUTPUT(); break;
+                case 'AND': item = new AND_GATE(); break;
+                case 'OR': item = new OR_GATE(); break;
+                case 'XOR': item = new XOR_GATE(); break;
+                case 'NOT': item = new NOT_GATE(); break;
+                case 'NAND': item = new NAND_GATE(); break;
+                case 'NOR': item = new NOR_GATE(); break;
+                case 'XNOR': item = new XNOR_GATE(); break;
+                case 'HALF_ADDER': item = new HALF_ADDER(); break;
+                case 'FULL_ADDER': item = new FULL_ADDER(); break;
+                default: return;
+            }
+        }
+        
+        const uiGate = new UIGate(item, x, y);
+        uiGates.push(uiGate);
+        console.log(`Created ${type} gate at (${x}, ${y})`);
+        markCircuitDirty();
+        markCircuitDirty();
+        return uiGate;
+    }
+    
+    // Update all displays
+    function updateAllUIDisplays() {
+        uiGates.forEach(gate => gate.updateDisplay());
+        UIConnectionManager.updateAllConnections();
+    }
+    
+    // Clear canvas
+    // Clear canvas - improved version
+    function clearCanvas() {
+        // Remove all UI gates
+        uiGates.forEach(gate => {
+            if (gate.element && gate.element.remove) {
+                gate.element.remove();
+            }
+        });
+        
+        // Remove all UI connections
+        uiConnections.forEach(conn => {
+            if (conn.line && conn.line.remove) {
+                conn.line.remove();
+            }
+        });
+        
+        // Clear arrays
+        ITEMS = []
+        CONNECTIONS = []
+        uiGates = [];
+        uiConnections = [];
+        
+        // Clear any temporary connection line
+        if (UIConnectionManager.tempLine) {
+            UIConnectionManager.tempLine.remove();
+            UIConnectionManager.tempLine = null;
+        }
+        
+        // Reset active connection
+        UIConnectionManager.activeConnection = null;
+        
+        // Mark circuit as dirty
+        markCircuitDirty();
+        
+        // Force a clean of the workspace (remove any stray elements)
+        const workspace = document.getElementById('workspace');
+        const svg = document.getElementById('connections-layer');
+        
+        // Only remove elements that aren't the SVG layer and aren't gates (though gates should be gone)
+        const children = workspace.children;
+        for (let i = children.length - 1; i >= 0; i--) {
+            const child = children[i];
+            if (child !== svg && child !== document.getElementById('connections-layer')) {
+                if (!child.classList || !child.classList.contains('ui-gate')) {
+                    child.remove();
+                }
+            }
+        }
+        
+        console.log('Canvas cleared');
+        document.getElementById('status').textContent = 'Canvas cleared';
+        
+        setTimeout(() => {
+            if (document.getElementById('status').textContent === 'Canvas cleared') {
+                document.getElementById('status').textContent = 'Ready';
+            }
+        }, 1000);
+        
+        // Force a final simulation to reset state
+        Simulate();
+        updateAllUIDisplays();
+    }
+    
+    // ========== IMPORT/EXPORT FUNCTIONS ==========
+
+    // Helper function to get current circuit data
+    // Helper function to get current circuit data (updated to include custom components)
+    // Helper function to get current circuit data
+    function getCurrentCircuitData() {
+        // Collect all custom components
+        const customComponentsToSave = {};
+        if (window.customComponents) {
+            for (const [className, comp] of Object.entries(window.customComponents)) {
+                customComponentsToSave[className] = {
+                    name: comp.name,
+                    input_count: comp.truth_table.input_count,
+                    output_count: comp.truth_table.output_count,
+                    input_names: comp.truth_table.input_names,
+                    output_names: comp.truth_table.output_names,
+                    dict: comp.truth_table.dict
+                };
+            }
+        }
+        
+        return {
+            items: ITEMS.map(item => ({
+                type: item.constructor.name,
+                inputs: item.inputs,
+                    outputs: item.outputs,
+                hash: item.hash,
+                inputs_connected: item.inputs_connected,
+                outputs_connected: item.outputs_connected,
+                customName: item.name || null,
+                isCustomGate: item instanceof CUSTOM_GATE,
+                customGateName: item instanceof CUSTOM_GATE ? item.name : null
+            })),
+            connections: CONNECTIONS.map(conn => ({
+                fromHash: conn.FromItem.hash,
+                toHash: conn.ToItem.hash,
+                fromPin: conn.FromItemOutName,
+                toPin: conn.ToItemInName
+            })),
+            positions: uiGates.map(gate => ({
+                hash: gate.item.hash,
+                x: gate.x,
+                y: gate.y
+            })),
+            customComponents: customComponentsToSave,
+            exportDate: new Date().toISOString()
+        };
+    }
+
+    // Helper function to load circuit data
+    // Helper function to load circuit data (updated to restore custom components)
+    
+    // Helper function to load circuit data
+    function loadCircuitData(data) {
+        try {
+            // Clear existing canvas
+            clearCanvas();
+            
+            // FIRST: Load custom components if they exist in the save
+            if (data.customComponents) {
+                // Remove existing custom components from toolbar
+                const existingCustomItems = document.querySelectorAll('.toolbar-item[data-custom="true"]');
+                existingCustomItems.forEach(item => item.remove());
+                
+                // Initialize custom components storage
+                if (!window.customComponents) {
+                    window.customComponents = {};
+                } else {
+                    // Clear existing
+                    window.customComponents = {};
+                }
+                
+                // Load each custom component
+                for (const [className, compData] of Object.entries(data.customComponents)) {
+                    // Recreate truth table
+                    const truthTable = new TRUTH_TABLE(compData.input_count, compData.output_count);
+                    truthTable.input_names = compData.input_names;
+                    truthTable.output_names = compData.output_names;
+                    truthTable.dict = compData.dict;
+                    
+                    // Store in window
+                    window.customComponents[className] = {
+                        name: compData.name,
+                        truth_table: truthTable
+                    };
+                    
+                    // Add to toolbar
+                    addToToolbar(className, compData.name);
+                }
+                
+                console.log(`✅ Loaded ${Object.keys(data.customComponents).length} custom components`);
+            }
+            
+            // Recreate items
+            const itemMap = new Map();
+            data.items.forEach(itemData => {
+                let item;
+                
+                // Check if it's a custom gate
+                if (itemData.isCustomGate && itemData.customGateName) {
+                    // Find the custom component by name
+                    let foundComp = null;
+                    
+                    if (window.customComponents) {
+                        for (const comp of Object.values(window.customComponents)) {
+                            if (comp.name === itemData.customGateName) {
+                                foundComp = comp;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (foundComp) {
+                        // Recreate custom gate
+                        item = new CUSTOM_GATE(foundComp.name, foundComp.truth_table);
+                    } else {
+                        console.warn(`Custom component "${itemData.customGateName}" not found`);
+                        return;
+                    }
+                } else {
+                    // Regular gates
+                    switch(itemData.type) {
+                        case 'INPUT':
+                            item = new INPUT();
+                            break;
+                        case 'OUTPUT':
+                            item = new OUTPUT();
+                            break;
+                        case 'AND_GATE':
+                            item = new AND_GATE();
+                            break;
+                        case 'OR_GATE':
+                            item = new OR_GATE();
+                            break;
+                        case 'XOR_GATE':
+                            item = new XOR_GATE();
+                            break;
+                        case 'NOT_GATE':
+                            item = new NOT_GATE();
+                            break;
+                        case 'NAND_GATE':
+                            item = new NAND_GATE();
+                            break;
+                        case 'NOR_GATE':
+                            item = new NOR_GATE();
+                            break;
+                        case 'XNOR_GATE':
+                            item = new XNOR_GATE();
+                            break;
+                        case 'HALF_ADDER':
+                            item = new HALF_ADDER();
+                            break;
+                        case 'FULL_ADDER':
+                            item = new FULL_ADDER();
+                            break;
+                        default:
+                            return;
+                    }
+                }
+                
+                // Restore all properties
+                if (item) {
+                    item.inputs = itemData.inputs;
+                    item.outputs = itemData.outputs;
+                    item.hash = itemData.hash;
+                    item.inputs_connected = itemData.inputs_connected || [];
+                    item.outputs_connected = itemData.outputs_connected || [];
+                    
+                    // Restore custom name if it exists
+                    if (itemData.customName) {
+                        item.name = itemData.customName;
+                    }
+                    
+                    itemMap.set(item.hash, item);
+                    
+                    // Find position or use default
+                    const pos = data.positions?.find(p => p.hash === item.hash);
+                    const uiGate = new UIGate(item, pos?.x || 100, pos?.y || 100);
+                    uiGates.push(uiGate);
+                }
+            });
+            
+            // Recreate connections
+            if (data.connections) {
+                data.connections.forEach(connData => {
+                    const fromItem = itemMap.get(connData.fromHash);
+                    const toItem = itemMap.get(connData.toHash);
+                    if (fromItem && toItem) {
+                        const connection = new Connection(fromItem, toItem, connData.fromPin, connData.toPin);
+                        const fromUIGate = uiGates.find(g => g.item === fromItem);
+                        const toUIGate = uiGates.find(g => g.item === toItem);
+                        if (fromUIGate && toUIGate) {
+                            uiConnections.push(new UIConnection(connection, fromUIGate, toUIGate));
+                        }
+                    }
+                });
+            }
+            
+            // Update all displays to show custom names
+            updateAllUIDisplays();
+            Simulate();
+            markCircuitDirty();
+            
+            return true;
+        } catch (error) {
+            console.error('Error loading circuit data:', error);
+            return false;
+        }
+    }
+
+    // 1. Export to File
+    function exportToFile() {
+        const data = getCurrentCircuitData();
+        const dataStr = JSON.stringify(data, null, 2);
+        const blob = new Blob([dataStr], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `logic-circuit-${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        console.log('Exported to file');
+        document.getElementById('status').textContent = '✓ Exported to file!';
+        setTimeout(() => {
+            if (document.getElementById('status').textContent === '✓ Exported to file!') {
+                document.getElementById('status').textContent = 'Ready';
+            }
+        }, 2000);
+    }
+
+    // 2. Import from File
+    function importFromFile() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'application/json';
+        
+        input.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const data = JSON.parse(event.target.result);
+                    
+                    // Force a complete reset before loading
+                    forceCompleteReset();
+                    
+                    // Small delay to ensure reset is complete
+                    setTimeout(() => {
+                        if (loadCircuitData(data)) {
+                            document.getElementById('status').textContent = '✓ Imported from file!';
+                            // Force a final refresh
+                            setTimeout(() => {
+                                Simulate();
+                                updateAllUIDisplays();
+                                UIConnectionManager.updateAllConnections();
+                            }, 50);
+                        } else {
+                            document.getElementById('status').textContent = '✗ Error: Invalid circuit data';
+                        }
+                        setTimeout(() => {
+                            const status = document.getElementById('status');
+                            if (status.textContent.includes('Imported') || status.textContent.includes('Error')) {
+                                status.textContent = 'Ready';
+                            }
+                        }, 2000);
+                    }, 50);
+                } catch (error) {
+                    console.error('Import error:', error);
+                    document.getElementById('status').textContent = '✗ Error: Invalid JSON file';
+                    setTimeout(() => {
+                        if (document.getElementById('status').textContent === '✗ Error: Invalid JSON file') {
+                            document.getElementById('status').textContent = 'Ready';
+                        }
+                    }, 2000);
+                }
+            };
+            reader.readAsText(file);
+        };
+        
+        input.click();
+    }
+
+    // Add this helper function for complete reset
+    function forceCompleteReset() {
+        // Clear all UI gates
+        uiGates.forEach(gate => {
+            if (gate.element) gate.element.remove();
+        });
+        
+        // Clear all connections
+        uiConnections.forEach(conn => {
+            if (conn.line) conn.line.remove();
+        });
+        
+        // Clear all data arrays
+        ITEMS.length = 0;
+        CONNECTIONS.length = 0;
+        uiGates = [];
+        uiConnections = [];
+        
+        // Clear any temporary lines
+        if (UIConnectionManager.tempLine) {
+            UIConnectionManager.tempLine.remove();
+            UIConnectionManager.tempLine = null;
+        }
+        
+        // Reset active connection
+        UIConnectionManager.activeConnection = null;
+        
+        // Mark circuit as dirty to force recomputation
+        markCircuitDirty();
+        
+        // Clear the workspace of any stray elements
+        const workspace = document.getElementById('workspace');
+        const svg = document.getElementById('connections-layer');
+        
+        // Clear all non-svg elements that might be left
+        const children = workspace.children;
+        for (let i = children.length - 1; i >= 0; i--) {
+            const child = children[i];
+            if (child.id !== 'connections-layer' && child.tagName !== 'svg') {
+                if (!child.classList || !child.classList.contains('ui-gate')) {
+                    // Only remove if not a ui-gate (they should be removed already)
+                    if (child !== svg) {
+                        child.remove();
+                    }
+                }
+            }
+        }
+        
+        console.log('✅ Force complete reset done');
+    }
+
+    // 3. Save to LocalStorage
+    function saveToLocalStorage() {
+        const data = getCurrentCircuitData();
+        localStorage.setItem('logicSimulator_savedCircuit', JSON.stringify(data));
+        localStorage.setItem('logicSimulator_lastSaved', new Date().toISOString());
+        
+        console.log('Saved to localStorage');
+        document.getElementById('status').textContent = '✓ Saved to browser!';
+        setTimeout(() => {
+            if (document.getElementById('status').textContent === '✓ Saved to browser!') {
+                document.getElementById('status').textContent = 'Ready';
+            }
+        }, 2000);
+    }
+
+    // 4. Load from LocalStorage
+    function loadFromLocalStorage() {
+        const savedData = localStorage.getItem('logicSimulator_savedCircuit');
+        if (!savedData) {
+            console.log('No saved data found');
+            document.getElementById('status').textContent = '⚠ No saved circuit found in browser';
+            setTimeout(() => {
+                if (document.getElementById('status').textContent === '⚠ No saved circuit found in browser') {
+                    document.getElementById('status').textContent = 'Ready';
+                }
+            }, 2000);
+            return;
+        }
+        
+        try {
+            const data = JSON.parse(savedData);
+            const lastSaved = localStorage.getItem('logicSimulator_lastSaved') || 'unknown date';
+            
+            if (loadCircuitData(data)) {
+                document.getElementById('status').textContent = `✓ Loaded from browser (saved: ${new Date(lastSaved).toLocaleString()})`;
+            } else {
+                document.getElementById('status').textContent = '✗ Error: Invalid saved data';
+            }
+            
+            setTimeout(() => {
+                const status = document.getElementById('status');
+                if (status.textContent.includes('Loaded') || status.textContent.includes('Error')) {
+                    status.textContent = 'Ready';
+                }
+            }, 3000);
+        } catch (error) {
+            console.error('Load error:', error);
+            document.getElementById('status').textContent = '✗ Error: Failed to load saved data';
+            setTimeout(() => {
+                if (document.getElementById('status').textContent === '✗ Error: Failed to load saved data') {
+                    document.getElementById('status').textContent = 'Ready';
+                }
+            }, 2000);
+        }
+    }
+
+    // Optional: Auto-save to localStorage every minute
+    let autoSaveInterval = null;
+
+    function enableAutoSave(intervalMs = 60000) {
+        if (autoSaveInterval) clearInterval(autoSaveInterval);
+        autoSaveInterval = setInterval(() => {
+            saveToLocalStorage();
+            console.log('Auto-saved to localStorage');
+        }, intervalMs);
+    }
+
+    function disableAutoSave() {
+        if (autoSaveInterval) {
+            clearInterval(autoSaveInterval);
+            autoSaveInterval = null;
+        }
+    }
+
+    // Optional: Check if there's saved data on page load
+    function checkForSavedData() {
+        const savedData = localStorage.getItem('logicSimulator_savedCircuit');
+        if (savedData) {
+            const lastSaved = localStorage.getItem('logicSimulator_lastSaved');
+            console.log(`Found saved circuit from ${lastSaved}`);
+            // Uncomment to auto-load on page load:
+            // if (confirm(`Load previously saved circuit from ${new Date(lastSaved).toLocaleString()}?`)) {
+            //     loadFromLocalStorage();
+            // }
+        }
+    }
+
+    // Optional: Clear localStorage data
+    function clearLocalStorageData() {
+        if (confirm('Clear all saved browser data for this simulator?')) {
+            localStorage.removeItem('logicSimulator_savedCircuit');
+            localStorage.removeItem('logicSimulator_lastSaved');
+            document.getElementById('status').textContent = '✓ Browser data cleared';
+            setTimeout(() => {
+                if (document.getElementById('status').textContent === '✓ Browser data cleared') {
+                    document.getElementById('status').textContent = 'Ready';
+                }
+            }, 2000);
+        }
+    }
+    
+    // Replace the setupToolbar function and add these event handlers:
+
+    function setupToolbar() {
+        const toolbarItems = document.querySelectorAll('.toolbar-item');
+        let selectedType = null;
+        
+        // Make toolbar items clickable
+        toolbarItems.forEach(item => {
+            // For clicking (non-drag)
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectedType = item.dataset.type;
+                document.getElementById('status').textContent = `Click on canvas to place ${selectedType}`;
+                document.body.style.cursor = 'crosshair';
+            });
+            
+            // For drag and drop
+            item.setAttribute('draggable', 'true');
+            item.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', item.dataset.type);
+                e.dataTransfer.effectAllowed = 'copy';
+                selectedType = null;
+            });
+        });
+        
+        
+        
+        const workspace = document.getElementById('workspace');
+        
+        // Handle canvas click for placing items
+        // In setupToolbar, update the workspace click handler:
+        workspace.addEventListener('click', (e) => {
+            // Check for regular selected type OR custom selected type
+            if (!selectedType && !window.selectedCustomType) return;
+            
+            if (e.target.closest('.ui-gate')) return;
+            
+            const rect = workspace.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            if (selectedType) {
+                createUIGate(selectedType, x, y);
+                selectedType = null;
+            } else if (window.selectedCustomType) {
+                createUIGate(window.selectedCustomType, x, y);
+                window.selectedCustomType = null;
+            }
+            
+            document.getElementById('status').textContent = 'Ready';
+            document.body.style.cursor = 'default';
+        });
+        
+        
+        // Handle drag and drop
+        workspace.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+        });
+        
+        workspace.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const type = e.dataTransfer.getData('text/plain');
+            const rect = workspace.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            createUIGate(type, x, y);
+            selectedType = null;
+            document.getElementById('status').textContent = 'Ready';
+            document.body.style.cursor = 'default';
+        });
+        
+        // Clear selection when clicking on empty area
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.toolbar-item') && !e.target.closest('.ui-gate')) {
+                selectedType = null;
+                document.body.style.cursor = 'default';
+            }
+        });
+    }
+
+    // Also add this CSS to make toolbar items look clickable
+    const style = document.createElement('style');
+    style.textContent = `
+        .toolbar-item {
+            cursor: pointer !important;
+        }
+        .toolbar-item:active {
+            transform: scale(0.95);
+        }
+    `;
+    document.head.appendChild(style);
+    
+    // Also allow clicking on workspace to place gates
+    document.getElementById('workspace').addEventListener('click', (e) => {
+        if (e.target === document.getElementById('workspace') || e.target === document.getElementById('connections-layer')) {
+            // Could place last selected gate, but for simplicity we don't
+        }
+    });
+    
+    // Initialize
+    setupToolbar();
+    
+    // Setup right-click deletion for custom components
+    function setupCustomDeletion() {
+        const toolbar = document.getElementById('toolbar');
+        
+        toolbar.addEventListener('contextmenu', (e) => {
+            const toolbarItem = e.target.closest('.toolbar-item');
+            if (!toolbarItem) return;
+            
+            const type = toolbarItem.getAttribute('data-type');
+            
+            // Check if it's a custom component
+            if (window.customComponents && window.customComponents[type]) {
+                e.preventDefault();
+                const componentName = window.customComponents[type].name;
+                
+                if (confirm(`Delete custom component "${componentName}"?`)) {
+                    // Delete from storage
+                    delete window.customComponents[type];
+                    
+                    // Remove from toolbar
+                    toolbarItem.remove();
+                    
+                    // Remove from localStorage if saved
+                    const saved = localStorage.getItem('savedCustomComponents');
+                    if (saved) {
+                        try {
+                            const savedComponents = JSON.parse(saved);
+                            delete savedComponents[type];
+                            localStorage.setItem('savedCustomComponents', JSON.stringify(savedComponents));
+                        } catch(e) {}
+                    }
+                    
+                    // Clear selection if this component was selected
+                    if (window.selectedCustomType === type) {
+                        window.selectedCustomType = null;
+                    }
+                    
+                    console.log(`✅ Deleted custom component: ${componentName}`);
+                    document.getElementById('status').textContent = `Deleted "${componentName}"`;
+                    setTimeout(() => {
+                        if (document.getElementById('status').textContent.includes('Deleted')) {
+                            document.getElementById('status').textContent = 'Ready';
+                        }
+                    }, 1500);
+                }
+            }
+        });
+    }
+
+    // Call this function after setupToolbar
+    setupCustomDeletion();
+    
+    // Add after your setupToolbar() call
+    const canvas = document.getElementById('canvas');
+    const workspace = document.getElementById('workspace');
+
+    // Update connections when scrolling
+    canvas.addEventListener('scroll', () => {
+        UIConnectionManager.updateAllConnections();
+    });
+
+    // Update connections when window resizes
+    window.addEventListener('resize', () => {
+        UIConnectionManager.updateAllConnections();
+    });
+
+    // If you have zoom functionality, call this after zoom changes
+    function updateAllAfterZoom() {
+        UIConnectionManager.updateAllConnections();
+    }
+
+    // Also update when gates are dragged - make sure your UIDragManager calls this
+    // In UIDragManager.startDrag, add this line in onMouseMove:
+    // UIConnectionManager.updateAllConnections();
+    
+    // Add this function to handle deletion
+    function setupDeleteHandler() {
+        let selectedGate = null;
+        
+        // Handle gate selection when clicked
+        document.addEventListener('click', (e) => {
+            const gateElement = e.target.closest('.ui-gate');
+            
+            // Remove highlight from all gates
+            document.querySelectorAll('.ui-gate').forEach(gate => {
+                gate.classList.remove('selected');
+            });
+            
+            if (gateElement) {
+                // Highlight selected gate
+                gateElement.classList.add('selected');
+                selectedGate = uiGates.find(g => g.element === gateElement);
+                document.getElementById('status').textContent = `Selected: ${selectedGate?.item.constructor.name || 'Gate'} - Press Delete to remove`;
+            } else {
+                selectedGate = null;
+                const statusText = document.getElementById('status').textContent;
+                if (statusText && !statusText.includes('Click on canvas')) {
+                    document.getElementById('status').textContent = 'Ready';
+                }
+            }
+        });
+        
+        // Handle delete key press
+        document.addEventListener('keydown', (e) => {
+            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedGate) {
+                deleteSelectedGate(selectedGate);
+                selectedGate = null;
+            }
+        });
+    }
+
+    // Function to delete a gate and all its connections
+    // Replace your deleteSelectedGate function with this complete version
+    function deleteSelectedGate(uiGate) {
+        if (!uiGate) return false;
+        
+        const gateName = uiGate.item.constructor.name;
+        const gateHash = uiGate.item.hash;
+        
+        console.log(`Deleting ${gateName} (${gateHash})`);
+        
+        // FIRST: Find all connections involving this gate
+        const connectionsToRemove = CONNECTIONS.filter(conn =>
+            conn.FromItem === uiGate.item ||
+            conn.ToItem === uiGate.item
+        );
+        
+        console.log(`Found ${connectionsToRemove.length} connection(s) to remove`);
+        
+        // SECOND: For each connection, clean up the connected gates' arrays
+        connectionsToRemove.forEach(conn => {
+            // If this gate is the FROM item, clean the TO item's inputs_connected
+            if (conn.FromItem === uiGate.item) {
+                const toGate = conn.ToItem;
+                const toPinName = conn.ToItemInName;
+                
+                // Remove from the receiving gate's inputs_connected array
+                const inputIndex = toGate.inputs_connected.indexOf(toPinName);
+                if (inputIndex !== -1) {
+                    toGate.inputs_connected.splice(inputIndex, 1);
+                    console.log(`  Cleaned ${toGate.constructor.name}.${toPinName} from inputs_connected`);
+                }
+                
+                // Also reset the input value to 0
+                const inputValueIndex = toGate.input_names.indexOf(toPinName);
+                if (inputValueIndex !== -1) {
+                    toGate.inputs[inputValueIndex] = 0;
+                }
+            }
+            
+            // If this gate is the TO item, clean the FROM item's outputs_connected
+            if (conn.ToItem === uiGate.item) {
+                const fromGate = conn.FromItem;
+                const fromPinName = conn.FromItemOutName;
+                
+                // Remove from the sending gate's outputs_connected array
+                const outputIndex = fromGate.outputs_connected.indexOf(fromPinName);
+                if (outputIndex !== -1) {
+                    fromGate.outputs_connected.splice(outputIndex, 1);
+                    console.log(`  Cleaned ${fromGate.constructor.name}.${fromPinName} from outputs_connected`);
+                }
+            }
+            
+            // Remove from CONNECTIONS array
+            const connIndex = CONNECTIONS.findIndex(c => c === conn);
+            if (connIndex !== -1) {
+                CONNECTIONS.splice(connIndex, 1);
+                console.log(`  Removed connection from CONNECTIONS array`);
+            }
+            
+            // Remove from UI connections
+            const uiConnIndex = uiConnections.findIndex(uc => uc.connection === conn);
+            if (uiConnIndex !== -1) {
+                uiConnections[uiConnIndex].delete();
+                uiConnections.splice(uiConnIndex, 1);
+            }
+        });
+        
+        // THIRD: Clean up this gate's own arrays (if it has any lingering references)
+        if (uiGate.item.inputs_connected) {
+            uiGate.item.inputs_connected = [];
+        }
+        if (uiGate.item.outputs_connected) {
+            uiGate.item.outputs_connected = [];
+        }
+        
+        // FOURTH: Remove from ITEMS array
+        const itemIndex = ITEMS.findIndex(i => i === uiGate.item);
+        if (itemIndex !== -1) {
+            ITEMS.splice(itemIndex, 1);
+            console.log(`  Removed ${gateName} from ITEMS array`);
+        }
+        
+        // FIFTH: Remove the UI element from DOM
+        uiGate.delete();
+        
+        // SIXTH: Remove from uiGates array
+        const uiGateIndex = uiGates.indexOf(uiGate);
+        if (uiGateIndex !== -1) {
+            uiGates.splice(uiGateIndex, 1);
+        }
+        
+        // Log the current state for debugging
+        console.log(`Remaining items: ${ITEMS.length}, connections: ${CONNECTIONS.length}`);
+        console.log("Remaining gates' input connection status:");
+        ITEMS.forEach(item => {
+            console.log(`  ${item.constructor.name}: inputs_connected = [${item.inputs_connected.join(', ')}]`);
+        });
+        
+        // Update status
+        document.getElementById('status').textContent = `Deleted ${gateName} and ${connectionsToRemove.length} connection(s)`;
+        
+        // Update all displays
+        updateAllUIDisplays();
+        
+        // Re-simulate to update the circuit
+        Simulate();
+        
+        // Clear status message after 2 seconds
+        setTimeout(() => {
+            if (document.getElementById('status').textContent.includes('Deleted')) {
+                document.getElementById('status').textContent = 'Ready';
+            }
+        }, 2000);
+        markCircuitDirty(); // Add this
+        return true;
+    }
+
+    // Also update the deleteConnection function to properly clean arrays
+    function deleteConnection(uiConnection) {
+        if (!uiConnection) return false;
+        
+        const conn = uiConnection.connection;
+        const fromGate = conn.FromItem;
+        const toGate = conn.ToItem;
+        const fromPin = conn.FromItemOutName;
+        const toPin = conn.ToItemInName;
+        
+        console.log(`Deleting connection: ${fromGate.constructor.name}.${fromPin} → ${toGate.constructor.name}.${toPin}`);
+        
+        // Remove from the ToItem's inputs_connected array
+        const inputIndex = toGate.inputs_connected.indexOf(toPin);
+        if (inputIndex !== -1) {
+            toGate.inputs_connected.splice(inputIndex, 1);
+            console.log(`  Removed ${toPin} from ${toGate.constructor.name}'s inputs_connected`);
+            
+            // Reset the input value to 0
+            const inputValueIndex = toGate.input_names.indexOf(toPin);
+            if (inputValueIndex !== -1) {
+                toGate.inputs[inputValueIndex] = 0;
+            }
+        }
+        
+        // Remove from the FromItem's outputs_connected array
+        const outputIndex = fromGate.outputs_connected.indexOf(fromPin);
+        if (outputIndex !== -1) {
+            fromGate.outputs_connected.splice(outputIndex, 1);
+            console.log(`  Removed ${fromPin} from ${fromGate.constructor.name}'s outputs_connected`);
+        }
+        
+        // Remove from CONNECTIONS array
+        const connIndex = CONNECTIONS.findIndex(c => c === conn);
+        if (connIndex !== -1) {
+            CONNECTIONS.splice(connIndex, 1);
+        }
+        
+        // Remove from UI
+        uiConnection.delete();
+        const uiConnIndex = uiConnections.indexOf(uiConnection);
+        if (uiConnIndex !== -1) {
+            uiConnections.splice(uiConnIndex, 1);
+        }
+        
+        console.log(`Remaining connections: ${CONNECTIONS.length}`);
+        console.log(`${toGate.constructor.name} inputs_connected now: [${toGate.inputs_connected.join(', ')}]`);
+        
+        // Re-simulate
+        Simulate();
+        
+        return true;
+    }
+
+    // Add a helper function to inspect all connections (for debugging)
+    function inspectConnections() {
+        console.log("=== INSPECTING ALL CONNECTIONS ===");
+        ITEMS.forEach(item => {
+            console.log(`${item.constructor.name} (${item.hash.slice(0,6)}):`);
+            console.log(`  Inputs connected: [${item.inputs_connected.join(', ')}]`);
+            console.log(`  Outputs connected: [${item.outputs_connected.join(', ')}]`);
+            console.log(`  Input values: [${item.inputs.join(', ')}]`);
+            console.log(`  Output values: [${item.outputs.join(', ')}]`);
+        });
+        
+        console.log("\nCONNECTIONS array:");
+        CONNECTIONS.forEach((conn, i) => {
+            console.log(`  ${i}: ${conn.FromItem.constructor.name}.${conn.FromItemOutName} → ${conn.ToItem.constructor.name}.${conn.ToItemInName}`);
+        });
+    }
+
+    // Make inspectConnections available globally
+    window.inspectConnections = inspectConnections;
+
+    // Also add visual feedback for selected gates with CSS
+    const deleteStyle = document.createElement('style');
+    deleteStyle.textContent = `
+        .ui-gate.selected {
+            border-color: #ff4444 !important;
+            box-shadow: 0 0 0 2px rgba(255,68,68,0.3) !important;
+            animation: pulse 0.5s ease-in-out;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+        }
+        
+        .ui-gate.selected .gate-title {
+            color: #ff4444 !important;
+        }
+    `;
+
+    document.head.appendChild(deleteStyle);
+    
+    // Call this function after your setupToolbar()
+    // Add this line in your initialization section:
+    setupDeleteHandler();
+    
+    setInterval(() => {
+        Simulate();
+        updateAllUIDisplays();
+    }, 100);
+    
+    function generateTruthTable() {
+         console.log('\n' + '='.repeat(60));
+         console.log('TRUTH TABLE GENERATOR');
+         console.log('='.repeat(60));
+         
+         // Find all INPUT and OUTPUT items
+         const inputGates = ITEMS.filter(item => item instanceof INPUT);
+         const outputGates = ITEMS.filter(item => item instanceof OUTPUT);
+         
+         if (inputGates.length === 0) {
+             console.log('⚠ No INPUT gates found');
+             return null;
+         }
+         
+         if (outputGates.length === 0) {
+             console.log('⚠ No OUTPUT gates found');
+             return null;
+         }
+         
+         // Create TRUTH_TABLE object
+         const truthTable = new TRUTH_TABLE(inputGates.length, outputGates.length);
+         
+         // Store input and output names
+         truthTable.input_names = inputGates.map(gate => gate.name || `IN_${gate.hash.slice(0,4)}`);
+         truthTable.output_names = outputGates.map(gate => gate.name || `OUT_${gate.hash.slice(0,4)}`);
+         
+         const numInputs = inputGates.length;
+         const numOutputs = outputGates.length;
+         const numCombinations = Math.pow(2, numInputs);
+         
+         console.log(`\n📊 Circuit Analysis:`);
+         console.log(`   Inputs: ${numInputs} (${truthTable.input_names.join(', ')})`);
+         console.log(`   Outputs: ${numOutputs} (${truthTable.output_names.join(', ')})`);
+         console.log(`   Total combinations: ${numCombinations}\n`);
+         
+         // Save current state
+         const savedInputValues = inputGates.map(g => g.outputs[0]);
+         const savedGateStates = [];
+         ITEMS.forEach(item => {
+             savedGateStates.push({
+                 item: item,
+                 inputs: [...item.inputs],
+                 outputs: [...item.outputs]
+             });
+         });
+         
+         // Print header
+         let header = '';
+         truthTable.input_names.forEach(name => { header += `${name.padEnd(10)} | `; });
+         truthTable.output_names.forEach(name => { header += `${name.padEnd(10)} | `; });
+         console.log(header);
+         console.log('-'.repeat(header.length));
+         
+         // Generate truth table and store in dict
+         for (let combo = 0; combo < numCombinations; combo++) {
+             // Set input values
+             for (let i = 0; i < numInputs; i++) {
+                 const bit = (combo >> (numInputs - 1 - i)) & 1;
+                 inputGates[i].outputs[0] = bit;
+             }
+             
+             // Simulate with propagation
+             let changed = true;
+             let iterations = 0;
+             const MAX_ITER = 50;
+             
+             while (changed && iterations < MAX_ITER) {
+                 changed = false;
+                 
+                 // Evaluate gates
+                 for (let item of ITEMS) {
+                     if (item instanceof INPUT) continue;
+                     if (item instanceof OUTPUT) continue;
+                     
+                     const oldOutputs = [...item.outputs];
+                     item.evaluate();
+                     
+                     for (let j = 0; j < item.outputs.length; j++) {
+                         if (oldOutputs[j] !== item.outputs[j]) {
+                             changed = true;
+                         }
+                     }
+                 }
+                 
+                 // Propagate through connections
+                 for (let conn of CONNECTIONS) {
+                     const fromIdx = conn.FromItem.output_names.indexOf(conn.FromItemOutName);
+                     const toIdx = conn.ToItem.input_names.indexOf(conn.ToItemInName);
+                     
+                     if (fromIdx !== -1 && toIdx !== -1) {
+                         const newVal = conn.FromItem.outputs[fromIdx];
+                         if (conn.ToItem.inputs[toIdx] !== newVal) {
+                             conn.ToItem.inputs[toIdx] = newVal;
+                             changed = true;
+                         }
+                     }
+                 }
+                 
+                 iterations++;
+             }
+             
+             // Get input and output values
+             const inputValues = inputGates.map(g => g.outputs[0]);
+             const outputValues = outputGates.map(g => g.inputs[0] || 0);
+             
+             // Create binary string key for dict
+             const key = inputValues.join('');
+             truthTable.dict[key] = outputValues.join('');
+             
+             // Print row
+             let row = '';
+             inputValues.forEach(v => { row += `${v.toString().padEnd(10)} | `; });
+             outputValues.forEach(v => { row += `${v.toString().padEnd(10)} | `; });
+             console.log(row);
+         }
+         
+         // Restore original state
+         for (let i = 0; i < inputGates.length; i++) {
+             inputGates[i].outputs[0] = savedInputValues[i];
+         }
+         
+         for (let i = 0; i < savedGateStates.length; i++) {
+             const saved = savedGateStates[i];
+             saved.item.inputs = [...saved.inputs];
+             saved.item.outputs = [...saved.outputs];
+         }
+         
+         // Final restore simulation
+         let changed = true;
+         let iterations = 0;
+         while (changed && iterations < 50) {
+             changed = false;
+             for (let item of ITEMS) {
+                 if (item instanceof INPUT) continue;
+                 const oldOutputs = [...item.outputs];
+                 item.evaluate();
+                 for (let j = 0; j < item.outputs.length; j++) {
+                     if (oldOutputs[j] !== item.outputs[j]) changed = true;
+                 }
+             }
+             for (let conn of CONNECTIONS) {
+                 const fromIdx = conn.FromItem.output_names.indexOf(conn.FromItemOutName);
+                 const toIdx = conn.ToItem.input_names.indexOf(conn.ToItemInName);
+                 if (fromIdx !== -1 && toIdx !== -1) {
+                     const newVal = conn.FromItem.outputs[fromIdx];
+                     if (conn.ToItem.inputs[toIdx] !== newVal) {
+                         conn.ToItem.inputs[toIdx] = newVal;
+                         changed = true;
+                     }
+                 }
+             }
+             iterations++;
+         }
+         
+         console.log('='.repeat(60));
+         console.log(`✅ Generated ${numCombinations} combinations`);
+         console.log(`   Dictionary entries: ${Object.keys(truthTable.dict).length}\n`);
+         
+         // Display dict preview
+         console.log('📖 Dictionary preview:');
+         const previewEntries = Object.entries(truthTable.dict).slice(0, 8);
+         previewEntries.forEach(([key, value]) => {
+             console.log(`   ${key} → ${value}`);
+         });
+         if (Object.keys(truthTable.dict).length > 8) {
+             console.log(`   ... and ${Object.keys(truthTable.dict).length - 8} more`);
+         }
+         console.log('');
+         
+         return truthTable;
+     }
+    
+    function generateTruthTable() {
+        console.log('\n' + '='.repeat(60));
+        console.log('TRUTH TABLE GENERATOR');
+        console.log('='.repeat(60));
+        
+        // Find all INPUT and OUTPUT items
+        const inputGates = ITEMS.filter(item => item instanceof INPUT);
+        const outputGates = ITEMS.filter(item => item instanceof OUTPUT);
+        
+        if (inputGates.length === 0) {
+            console.log('⚠ No INPUT gates found');
+            alert('Need at least one INPUT and one OUTPUT gate');
+            return null;
+        }
+        
+        if (outputGates.length === 0) {
+            console.log('⚠ No OUTPUT gates found');
+            alert('Need at least one INPUT and one OUTPUT gate');
+            return null;
+        }
+        
+        // Check for duplicate input names
+        const inputNames = inputGates.map(gate => gate.name || `IN_${gate.hash.slice(0,4)}`);
+        const duplicateInputs = inputNames.filter((name, index) => inputNames.indexOf(name) !== index);
+        if (duplicateInputs.length > 0) {
+            const uniqueDuplicates = [...new Set(duplicateInputs)];
+            alert(`⚠ WARNING: Duplicate input names found:\n${uniqueDuplicates.join(', ')}\n\nTruth table may have incorrect results. Rename inputs to be unique.`);
+            console.warn('Duplicate input names:', uniqueDuplicates);
+            return null;
+        }
+        
+        // Check for duplicate output names
+        const outputNames = outputGates.map(gate => gate.name || `OUT_${gate.hash.slice(0,4)}`);
+        const duplicateOutputs = outputNames.filter((name, index) => outputNames.indexOf(name) !== index);
+        if (duplicateOutputs.length > 0) {
+            const uniqueDuplicates = [...new Set(duplicateOutputs)];
+            alert(`⚠ WARNING: Duplicate output names found:\n${uniqueDuplicates.join(', ')}\n\nTruth table may have incorrect results. Rename outputs to be unique.`);
+            console.warn('Duplicate output names:', uniqueDuplicates);
+            return null;
+        }
+        
+        // Check for invalid characters in names
+        const invalidNamePattern = /[^a-zA-Z0-9_]/;
+        const invalidInputs = inputNames.filter(name => invalidNamePattern.test(name));
+        const invalidOutputs = outputNames.filter(name => invalidNamePattern.test(name));
+        
+        if (invalidInputs.length > 0) {
+            alert(`⚠ WARNING: Invalid characters in input names:\n${invalidInputs.join(', ')}\n\nUse only letters, numbers, and underscores.`);
+            console.warn('Invalid input names:', invalidInputs);
+            return null;
+        }
+        
+        if (invalidOutputs.length > 0) {
+            alert(`⚠ WARNING: Invalid characters in output names:\n${invalidOutputs.join(', ')}\n\nUse only letters, numbers, and underscores.`);
+            console.warn('Invalid output names:', invalidOutputs);
+            return null;
+        }
+        
+        // Check if input names match the pattern of the circuit
+        const inputNamePattern = /^IN_\d+$/;
+        const defaultInputs = inputNames.filter(name => inputNamePattern.test(name));
+        if (defaultInputs.length === inputNames.length) {
+            console.log('📝 Using default input names:', inputNames.join(', '));
+        } else {
+            console.log('📝 Custom input names:', inputNames.join(', '));
+        }
+        
+        // Check if output names match the pattern of the circuit
+        const outputNamePattern = /^OUT_\d+$/;
+        const defaultOutputs = outputNames.filter(name => outputNamePattern.test(name));
+        if (defaultOutputs.length === outputNames.length) {
+            console.log('📝 Using default output names:', outputNames.join(', '));
+        } else {
+            console.log('📝 Custom output names:', outputNames.join(', '));
+        }
+        
+        // Create TRUTH_TABLE object
+        const truthTable = new TRUTH_TABLE(inputGates.length, outputGates.length);
+        
+        // Store input and output names
+        truthTable.input_names = inputNames;
+        truthTable.output_names = outputNames;
+        
+        const numInputs = inputGates.length;
+        const numOutputs = outputGates.length;
+        const numCombinations = Math.pow(2, numInputs);
+        
+        console.log(`\n📊 Circuit Analysis:`);
+        console.log(`   Inputs: ${numInputs} (${truthTable.input_names.join(', ')})`);
+        console.log(`   Outputs: ${numOutputs} (${truthTable.output_names.join(', ')})`);
+        console.log(`   Total combinations: ${numCombinations}\n`);
+        
+        // Save current state
+        const savedInputValues = inputGates.map(g => g.outputs[0]);
+        const savedGateStates = [];
+        ITEMS.forEach(item => {
+            savedGateStates.push({
+                item: item,
+                inputs: [...item.inputs],
+                outputs: [...item.outputs]
+            });
+        });
+        
+        // Print header
+        let header = '';
+        truthTable.input_names.forEach(name => { header += `${name.padEnd(10)} | `; });
+        truthTable.output_names.forEach(name => { header += `${name.padEnd(10)} | `; });
+        console.log(header);
+        console.log('-'.repeat(header.length));
+        
+        // Generate truth table and store in dict
+        for (let combo = 0; combo < numCombinations; combo++) {
+            // Set input values
+            for (let i = 0; i < numInputs; i++) {
+                const bit = (combo >> (numInputs - 1 - i)) & 1;
+                inputGates[i].outputs[0] = bit;
+            }
+            
+            // Simulate with propagation
+            let changed = true;
+            let iterations = 0;
+            const MAX_ITER = 50;
+            
+            while (changed && iterations < MAX_ITER) {
+                changed = false;
+                
+                // Evaluate gates
+                for (let item of ITEMS) {
+                    if (item instanceof INPUT) continue;
+                    if (item instanceof OUTPUT) continue;
+                    
+                    const oldOutputs = [...item.outputs];
+                    item.evaluate();
+                    
+                    for (let j = 0; j < item.outputs.length; j++) {
+                        if (oldOutputs[j] !== item.outputs[j]) {
+                            changed = true;
+                        }
+                    }
+                }
+                
+                // Propagate through connections
+                for (let conn of CONNECTIONS) {
+                    const fromIdx = conn.FromItem.output_names.indexOf(conn.FromItemOutName);
+                    const toIdx = conn.ToItem.input_names.indexOf(conn.ToItemInName);
+                    
+                    if (fromIdx !== -1 && toIdx !== -1) {
+                        const newVal = conn.FromItem.outputs[fromIdx];
+                        if (conn.ToItem.inputs[toIdx] !== newVal) {
+                            conn.ToItem.inputs[toIdx] = newVal;
+                            changed = true;
+                        }
+                    }
+                }
+                
+                iterations++;
+            }
+            
+            // Get input and output values
+            const inputValues = inputGates.map(g => g.outputs[0]);
+            const outputValues = outputGates.map(g => g.inputs[0] || 0);
+            
+            // Create binary string key for dict
+            const key = inputValues.join('');
+            truthTable.dict[key] = outputValues.join('');
+            
+            // Print row
+            let row = '';
+            inputValues.forEach(v => { row += `${v.toString().padEnd(10)} | `; });
+            outputValues.forEach(v => { row += `${v.toString().padEnd(10)} | `; });
+            console.log(row);
+        }
+        
+        // Restore original state
+        for (let i = 0; i < inputGates.length; i++) {
+            inputGates[i].outputs[0] = savedInputValues[i];
+        }
+        
+        for (let i = 0; i < savedGateStates.length; i++) {
+            const saved = savedGateStates[i];
+            saved.item.inputs = [...saved.inputs];
+            saved.item.outputs = [...saved.outputs];
+        }
+        
+        // Final restore simulation
+        let changed = true;
+        let iterations = 0;
+        while (changed && iterations < 50) {
+            changed = false;
+            for (let item of ITEMS) {
+                if (item instanceof INPUT) continue;
+                const oldOutputs = [...item.outputs];
+                item.evaluate();
+                for (let j = 0; j < item.outputs.length; j++) {
+                    if (oldOutputs[j] !== item.outputs[j]) changed = true;
+                }
+            }
+            for (let conn of CONNECTIONS) {
+                const fromIdx = conn.FromItem.output_names.indexOf(conn.FromItemOutName);
+                const toIdx = conn.ToItem.input_names.indexOf(conn.ToItemInName);
+                if (fromIdx !== -1 && toIdx !== -1) {
+                    const newVal = conn.FromItem.outputs[fromIdx];
+                    if (conn.ToItem.inputs[toIdx] !== newVal) {
+                        conn.ToItem.inputs[toIdx] = newVal;
+                        changed = true;
+                    }
+                }
+            }
+            iterations++;
+        }
+        
+        console.log('='.repeat(60));
+        console.log(`✅ Generated ${numCombinations} combinations`);
+        console.log(`   Dictionary entries: ${Object.keys(truthTable.dict).length}\n`);
+        
+        // Display dict preview with warnings if any issues found
+        console.log('📖 Dictionary preview:');
+        const previewEntries = Object.entries(truthTable.dict).slice(0, 8);
+        previewEntries.forEach(([key, value]) => {
+            console.log(`   ${key} → ${value}`);
+        });
+        if (Object.keys(truthTable.dict).length > 8) {
+            console.log(`   ... and ${Object.keys(truthTable.dict).length - 8} more`);
+        }
+        
+        // Final warning summary
+        if (duplicateInputs.length > 0 || duplicateOutputs.length > 0 || invalidInputs.length > 0 || invalidOutputs.length > 0) {
+            console.log('\n⚠ TRUTH TABLE WARNINGS SUMMARY:');
+            if (duplicateInputs.length > 0) console.log(`   - Duplicate inputs: ${[...new Set(duplicateInputs)].join(', ')}`);
+            if (duplicateOutputs.length > 0) console.log(`   - Duplicate outputs: ${[...new Set(duplicateOutputs)].join(', ')}`);
+            if (invalidInputs.length > 0) console.log(`   - Invalid input names: ${invalidInputs.join(', ')}`);
+            if (invalidOutputs.length > 0) console.log(`   - Invalid output names: ${invalidOutputs.join(', ')}`);
+        }
+        
+        console.log('');
+        
+        return truthTable;
+    }
+    
+    // Save current circuit as a custom component with duplicate checking
+    // Save current circuit as a custom component with full validation
+    function saveAsCustomComponent() {
+        // Generate truth table from current circuit
+        const truthTable = generateTruthTable();
+        
+        if (!truthTable) {
+            return;
+        }
+        
+        // Get existing names for suggestions
+        const existingNames = getCustomComponentNames();
+        let defaultName = 'MY_CIRCUIT';
+        
+        // Suggest a unique name
+        let counter = 1;
+        while (existingNames.includes(defaultName)) {
+            defaultName = `MY_CIRCUIT_${counter}`;
+            counter++;
+        }
+        
+        // Ask for component name
+        let componentName = prompt(
+            `Name your custom component:\n\n` +
+            `Existing components: ${existingNames.length ? existingNames.join(', ') : 'none'}\n\n` +
+            `Enter name:`,
+            defaultName
+        );
+        
+        if (!componentName) return;
+        
+        // Validate name (no special characters except spaces)
+        if (!/^[a-zA-Z0-9\s_-]+$/.test(componentName)) {
+            alert('Invalid name! Use only letters, numbers, spaces, underscores, and hyphens.');
+            return saveAsCustomComponent(); // Try again
+        }
+        
+        // Clean name for class
+        const className = componentName.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+        
+        // Check for duplicate
+        if (window.customComponents && window.customComponents[className]) {
+            const existing = window.customComponents[className];
+            
+            // Show detailed comparison
+            const userChoice = confirm(
+                `⚠️ DUPLICATE NAME DETECTED!\n\n` +
+                `"${componentName}" already exists.\n\n` +
+                `Existing component details:\n` +
+                `  • Created: ${new Date(existing.created).toLocaleString()}\n` +
+                `  • Inputs: ${existing.truth_table.input_count}\n` +
+                `  • Outputs: ${existing.truth_table.output_count}\n` +
+                `  • Truth table entries: ${Object.keys(existing.truth_table.dict).length}\n\n` +
+                `Do you want to OVERWRITE it?\n` +
+                `(Click Cancel to keep both and rename)`
+            );
+            
+            if (!userChoice) {
+                // Try to save with a modified name
+                const newName = prompt(
+                    `Enter a different name:\n\n` +
+                    `Suggested: ${componentName}_2, ${componentName}_NEW, etc.`,
+                    `${componentName}_2`
+                );
+                if (newName) {
+                    componentName = newName;
+                    // Continue with the new name (will recheck duplicate)
+                } else {
+                    return; // User cancelled
+                }
+            } else if (userChoice) {
+                // User confirmed overwrite - delete existing
+                deleteCustomComponentByName(className);
+            }
+        }
+        
+        // Re-clean name after potential rename
+        const finalClassName = componentName.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+        
+        // Store the truth table
+        if (!window.customComponents) {
+            window.customComponents = {};
+        }
+        
+        window.customComponents[finalClassName] = {
+            name: componentName,
+            truth_table: truthTable,
+            created: new Date().toISOString(),
+            version: "1.0"
+        };
+        
+        // Add to toolbar
+        addToToolbar(finalClassName, componentName);
+        
+        // Update badge
+        if (typeof updateCustomBadge === 'function') updateCustomBadge();
+        
+        console.log(`✅ Saved "${componentName}" as custom component`);
+        console.log(`   Class: ${finalClassName}`);
+        console.log(`   Inputs: ${truthTable.input_count}, Outputs: ${truthTable.output_count}`);
+        console.log(`   Patterns: ${Object.keys(truthTable.dict).length}`);
+        
+        // Optional: Show success with details
+        alert(
+            `✓ "${componentName}" saved!\n\n` +
+            `Inputs: ${truthTable.input_count}\n` +
+            `Outputs: ${truthTable.output_count}\n`
+        );
+    }
+
+    // Optional: Add rename functionality for custom components
+    function renameCustomComponent() {
+        if (!window.customComponents || Object.keys(window.customComponents).length === 0) {
+            alert('No custom components to rename');
+            return;
+        }
+        
+        // Build list
+        let list = 'Select component to rename:\n\n';
+        const components = Object.entries(window.customComponents);
+        components.forEach(([className, data], index) => {
+            list += `${index + 1}. ${data.name} (${data.truth_table.input_count} in, ${data.truth_table.output_count} out)\n`;
+        });
+        
+        const choice = prompt(list + '\n\nEnter number:');
+        if (!choice) return;
+        
+        const index = parseInt(choice) - 1;
+        if (index < 0 || index >= components.length) {
+            alert('Invalid selection');
+            return;
+        }
+        
+        const [oldClassName, data] = components[index];
+        const oldName = data.name;
+        
+        const newName = prompt(`Rename "${oldName}" to:`, oldName);
+        if (!newName || newName === oldName) return;
+        
+        // Check for duplicate new name
+        const newClassName = newName.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+        
+        if (window.customComponents[newClassName] && newClassName !== oldClassName) {
+            alert(`"${newName}" already exists! Delete or rename that one first.`);
+            return;
+        }
+        
+        // Create new entry
+        window.customComponents[newClassName] = {
+            ...data,
+            name: newName,
+            renamed: new Date().toISOString()
+        };
+        
+        // Delete old
+        delete window.customComponents[oldClassName];
+        
+        // Update toolbar
+        const toolbarItems = document.querySelectorAll('.toolbar-item');
+        for (let item of toolbarItems) {
+            if (item.getAttribute('data-type') === oldClassName) {
+                item.setAttribute('data-type', newClassName);
+                item.textContent = `🔧 ${newName}`;
+                break;
+            }
+        }
+        
+        console.log(`✅ Renamed "${oldName}" → "${newName}"`);
+        alert(`Component renamed to "${newName}"`);
+    }
+
+    // Add rename button to controls (optional)
+    // <button onclick="renameCustomComponent()" style="background: #4ec9b0;">✏️ Rename Custom</button>
+
+    // Helper function to delete custom component by name
+    function deleteCustomComponentByName(className) {
+        if (!window.customComponents || !window.customComponents[className]) return false;
+        
+        const componentName = window.customComponents[className].name;
+        
+        // Remove from toolbar
+        const toolbarItems = document.querySelectorAll('.toolbar-item');
+        for (let item of toolbarItems) {
+            if (item.getAttribute('data-type') === className) {
+                item.remove();
+                break;
+            }
+        }
+        
+        // Remove from storage
+        delete window.customComponents[className];
+        
+        // Remove from localStorage
+        const saved = localStorage.getItem('savedCustomComponents');
+        if (saved) {
+            try {
+                const savedComponents = JSON.parse(saved);
+                delete savedComponents[className];
+                localStorage.setItem('savedCustomComponents', JSON.stringify(savedComponents));
+            } catch(e) {}
+        }
+        
+        console.log(`Deleted existing component: ${componentName}`);
+        return true;
+    }
+
+    // Alternative: Check before showing prompt
+    function checkDuplicateName(componentName) {
+        if (!window.customComponents) return false;
+        
+        const className = componentName.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+        return !!window.customComponents[className];
+    }
+
+    // Get list of existing custom component names
+    function getCustomComponentNames() {
+        if (!window.customComponents) return [];
+        return Object.values(window.customComponents).map(comp => comp.name);
+    }
+
+    // Add component to toolbar
+    function addToToolbar(className, displayName) {
+        const toolbar = document.getElementById('toolbar');
+        
+        const newItem = document.createElement('div');
+        newItem.className = 'toolbar-item';
+        newItem.setAttribute('data-type', className);
+        newItem.setAttribute('data-custom', 'true');  // Mark as custom
+        newItem.textContent = `🔧 ${displayName}`;
+        
+        // Add tooltip to show right-click deletes
+        newItem.title = "Right-click to delete";
+        
+        // Make it draggable and clickable like other toolbar items
+        newItem.setAttribute('draggable', 'true');
+        newItem.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', className);
+            e.dataTransfer.effectAllowed = 'copy';
+        });
+        
+        newItem.addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.selectedCustomType = className;
+            document.getElementById('status').textContent = `Click canvas to place ${displayName}`;
+            document.body.style.cursor = 'crosshair';
+        });
+        
+        toolbar.appendChild(newItem);
+    }
+    
+    // Clear all custom components from toolbar and storage
+    function clearAllCustomComponents() {
+        if (!window.customComponents || Object.keys(window.customComponents).length === 0) {
+            alert('No custom components to clear');
+            return;
+        }
+        
+        const count = Object.keys(window.customComponents).length;
+        
+        if (confirm(`⚠️ Delete ALL ${count} custom component(s)?\n\nThis action cannot be undone!`)) {
+            // Remove all custom toolbar items
+            const toolbarItems = document.querySelectorAll('.toolbar-item');
+            toolbarItems.forEach(item => {
+                if (item.getAttribute('data-custom') === 'true') {
+                    item.remove();
+                }
+            });
+            
+            // Clear the custom components storage
+            window.customComponents = {};
+            
+            // Clear from localStorage
+            localStorage.removeItem('savedCustomComponents');
+            
+            // Also clear from any saved circuit data in localStorage
+            const savedCircuit = localStorage.getItem('logicSimulator_savedCircuit');
+            if (savedCircuit) {
+                try {
+                    const circuitData = JSON.parse(savedCircuit);
+                    if (circuitData.customComponents) {
+                        circuitData.customComponents = {};
+                        localStorage.setItem('logicSimulator_savedCircuit', JSON.stringify(circuitData));
+                    }
+                } catch(e) {}
+            }
+            
+            // Clear selected custom type if any
+            if (window.selectedCustomType) {
+                window.selectedCustomType = null;
+            }
+            
+            console.log(`✅ Cleared ${count} custom component(s)`);
+            document.getElementById('status').textContent = `✓ Cleared ${count} custom component(s)`;
+            
+            setTimeout(() => {
+                if (document.getElementById('status').textContent.includes('Cleared')) {
+                    document.getElementById('status').textContent = 'Ready';
+                }
+            }, 2000);
+        }
+    }
+
+    // Add to your addToToolbar and delete functions to update badge
+    // Call updateCustomBadge() after adding or deleting custom components
+    
+    // Help function
+    function showHelp() {
+        alert(
+            '🔧 LOGIC SIMULATOR HELP\n\n' +
+            '📌 BASIC OPERATIONS:\n' +
+            '• Click any gate in the toolbar, then click on canvas to place it\n' +
+            '• Drag gates from toolbar directly onto canvas\n' +
+            '• Drag gates on canvas to reposition them\n' +
+            '• Click on a gate and press Delete key to remove\n\n' +
+            '🔌 CONNECTIONS:\n' +
+            '• Click and drag from an OUTPUT pin (orange circle) to an INPUT pin (blue circle)\n' +
+            '• Connections appear as green lines\n' +
+            '• Outputs automatically update when inputs change\n\n' +
+            '🎮 INPUT GATES:\n' +
+            '• Click the "Toggle" button on INPUT gates to change value (0↔1)\n' +
+            '• Rename INPUT/OUTPUT gates using the ✏️ button\n\n' +
+            '✨ CUSTOM COMPONENTS:\n' +
+            '• Build a circuit, then click "Save As Component" to create a reusable block\n' +
+            '• Custom components appear in toolbar with purple styling\n' +
+            '• Right-click custom components to delete them\n\n' +
+            '💾 SAVE/LOAD:\n' +
+            '• "Export to File" - Save as JSON file\n' +
+            '• "Import from File" - Load from JSON file\n' +
+            '• "Save to Browser" - Store in browser memory\n' +
+            '• "Load from Browser" - Load from browser memory\n\n' +
+            '📊 TRUTH TABLE:\n' +
+            '• Run generateTruthTable() in console to see truth table\n' +
+            '• Tables show all input combinations and outputs\n\n' +
+            '⌨️ KEYBOARD SHORTCUTS:\n' +
+            '• Delete/Backspace - Remove selected gate\n' +
+            '• Click + drag - Move gates/connections\n\n'
+        );
+    }
+    
+</script>
+</body>
+</html>
